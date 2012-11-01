@@ -14,7 +14,7 @@ object JXLBuild extends Build {
 
   lazy val standardSettings = Defaults.defaultSettings ++ Seq(
       organization := "eu.henkelmann"
-    , scalaVersion := "2.9.1"
+    , scalaVersion := "2.9.2"
     , sbtPlugin := true
 
     , publishSetting
