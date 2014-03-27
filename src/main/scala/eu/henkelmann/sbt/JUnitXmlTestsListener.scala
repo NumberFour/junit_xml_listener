@@ -1,25 +1,24 @@
 package eu.henkelmann.sbt
 
-import _root_.sbt._
 import java.io.{StringWriter, PrintWriter, File}
 import java.net.InetAddress
+
 import scala.collection.mutable.ListBuffer
 import scala.xml.{Elem, Node, XML}
-// import sbt.testing.{Event => TEvent}
-import org.scalatools.testing.{Event => TEvent, Result => TResult, Logger => TLogger}
-/*
-The api for the test interface defining the results and events
-can be found here: 
-https://github.com/harrah/test-interface
-*/
 
+import sbt._
+import sbt.testing.{OptionalThrowable, Event, Status}
 
 /**
  * A tests listener that outputs the results it receives in junit xml 
  * report format.
+ *
+ * Originally created by: https://github.com/harrah/test-interface
+ * This interface was superseded by implementation in sbt.testing package.
+ *
  * @param outputDir path to the dir in which a folder with results is generated
  */
-class JUnitXmlTestsListener(val outputDir:String) extends TestsListener
+class JUnitXmlTestsListener(val outputDir: String) extends TestsListener
 {
     /**Current hostname so we know which machine executed the tests*/
     val hostname = InetAddress.getLocalHost.getHostName
@@ -42,24 +41,23 @@ class JUnitXmlTestsListener(val outputDir:String) extends TestsListener
     /** Gathers data for one Test Suite. We map test groups to TestSuites.
      * Each TestSuite gets its own output file.
      */
-    class TestSuite(val name:String) {
-        val events:ListBuffer[TEvent] = new ListBuffer()
-        val start                     = System.currentTimeMillis
-        var end                       = System.currentTimeMillis
-        
+    class TestSuite(val name: String) {
+        val start = System.currentTimeMillis
+        val events = new ListBuffer[Event]()
+
         /**Adds one test result to this suite.*/
-        def addEvent(e:TEvent) = events += e
+        def addEvent(e: Event) = events += e
         
         /** Returns a triplet with the number of errors, failures and the 
           * total numbers of tests in this suite.
           */
-        def count():(Int, Int, Int) = {
+        def count(): (Int, Int, Int) = {
             var errors, failures = 0
             for (e <- events) {
-                e.result match {
-                    case TResult.Error   => errors +=1
-                    case TResult.Failure => failures +=1 
-                    case _               => 
+                e.status() match {
+                    case Status.Error   => errors   += 1
+                    case Status.Failure => failures += 1
+                    case _              =>
                 }
             }
             (errors, failures, events.size)
@@ -68,10 +66,8 @@ class JUnitXmlTestsListener(val outputDir:String) extends TestsListener
         /** Stops the time measuring and emits the XML for 
          * All tests collected so far. 
          */
-        def stop():Elem = {
-            end = System.currentTimeMillis
-            val duration  = end - start
-            
+        def stop(): Elem = {
+            val duration  = System.currentTimeMillis - start
             val (errors, failures, tests) = count()
                 
             val result = <testsuite hostname={hostname} name={name} 
@@ -80,25 +76,19 @@ class JUnitXmlTestsListener(val outputDir:String) extends TestsListener
                 {properties}
                 {
                     for (e <- events) yield
-                    <testcase classname={name} name={e.testName} time={"0.0"}> {
-                        var trace:String = if (e.error!=null) {
-                            val stringWriter = new StringWriter()
-                            val writer = new PrintWriter(stringWriter)
-                            e.error.printStackTrace(writer)
-                            writer.flush()
-                            stringWriter.toString
+                    <testcase classname={name} name={e.fullyQualifiedName()} time={"0.0"}> {
+                        e.status() match {
+                            case Status.Error => maybeErroneousResult(e.throwable()) { _ match {
+                              case Some((cause, stackTrace)) => <error message={cause.getMessage} type={cause.getClass.getName}>{stackTrace}</error>
+                              case None                      => <error message={"No Exception or message provided"} />
+                            }}
+                            case Status.Failure => maybeErroneousResult(e.throwable()) { _ match {
+                              case Some((cause, stackTrace)) => <failure message={cause.getMessage} type={cause.getClass.getName}>{stackTrace}</failure>
+                              case None                      => <failure message={"No Exception or message provided"} />
+                            }}
+                            case Status.Skipped              => <skipped />
+                            case _                           => {}
                         }
-                        else {
-                            ""
-                        }
-                        e.result match {
-                            case TResult.Error   if (e.error!=null) => <error message={e.error.getMessage} type={e.error.getClass.getName}>{trace}</error>
-                            case TResult.Error                      => <error message={"No Exception or message provided"} />
-                            case TResult.Failure if (e.error!=null) => <failure message={e.error.getMessage} type={e.error.getClass.getName}>{trace}</failure>
-                            case TResult.Failure                    => <failure message={"No Exception or message provided"} />
-                            case TResult.Skipped                    => <skipped />
-                            case _               => {}
-                            }
                     }
                     </testcase>
                     
@@ -108,6 +98,24 @@ class JUnitXmlTestsListener(val outputDir:String) extends TestsListener
                 </testsuite>
                 
             result
+        }
+
+        private def maybeErroneousResult(causeOpt: OptionalThrowable)(body: Option[(Throwable, String)] => Elem): Elem = {
+          if (causeOpt.isDefined) {
+            val cause = causeOpt.get()
+            val stackTrace = retrieveStackTrace(cause)
+            body(Some(cause, stackTrace))
+          } else {
+            body(None)
+          }
+        }
+
+        private def retrieveStackTrace(cause: Throwable): String = {
+          val stringWriter = new StringWriter()
+          val writer = new PrintWriter(stringWriter)
+          cause.printStackTrace(writer)
+          writer.flush()
+          stringWriter.toString
         }
     }
     
