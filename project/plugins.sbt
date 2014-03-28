@@ -1,0 +1,1 @@
+addSbtPlugin("com.github.mpeltonen" % "sbt-idea" % "1.6.0") // adds 'gen-idea' task, which generates IntelliJ IDEA project files, needed only prior version 13 of IntelliJ IDEA

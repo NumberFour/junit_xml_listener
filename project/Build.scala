@@ -8,18 +8,17 @@ object JXLBuild extends Build {
       id = "junit_xml_listener"
     , base = file(".")
     , settings = standardSettings ++ Seq(
-          version := "0.3.1-SNAPSHOT"
+          version := "0.3.2-SNAPSHOT"
     )
   )
 
   lazy val standardSettings = Defaults.defaultSettings ++ Seq(
       organization := "eu.henkelmann"
-    , scalaVersion := "2.9.2"
     , sbtPlugin := true
-
     , publishSetting
     , credentialsSetting
-    , scalacOptions  ++= Seq("-deprecation", "-unchecked")
+    , scalaVersion := "2.10.3"
+    , scalacOptions  ++= Seq("-deprecation", "-unchecked", "-feature")
   )
 
   lazy val publishSetting = publishTo <<= (version) {
